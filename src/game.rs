@@ -1,5 +1,5 @@
 use bevy::{prelude::*, window::*};
-use bevy_xpbd_2d::{components::{RigidBody, Collider, CollidingEntities, Restitution}, resources::Gravity};
+use bevy_xpbd_2d::{components::{RigidBody, Collider, CollidingEntities, Restitution, ColliderDensity, LinearDamping, LinearVelocity}, resources::Gravity };
 
 use crate::fruit::*;
 
@@ -31,16 +31,21 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
-        .insert_resource(Gravity(Vec2::NEG_Y * 800.0))
+        .insert_resource(Gravity(Vec2::NEG_Y * 3000.0))
         .init_resource::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, spawn_fruit)
-        .add_systems(Update, merge_fruit)
+        .add_systems(FixedUpdate, merge_fruit)
+        .add_systems(FixedUpdate, stabilize)
         .add_systems(Update, game_over)
         .add_systems(Update, reset_game)
+        .add_systems(Update, score_text_update)
         ;
     }
 }
+
+#[derive(Component)]
+struct ScoreText;
 
 pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state: Res<GameState>) {
     commands.spawn(Camera2dBundle {
@@ -94,7 +99,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
 
     commands.spawn((
         RigidBody::Static,
-        Collider::cuboid(700.0, 20.0),
+        Collider::cuboid(700.0, 10.0),
         SpriteBundle {
             sprite: Sprite {
                 color: Color::rgba(0.0, 1.0, 0.0, 0.0),
@@ -109,11 +114,11 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
     commands.spawn(
         SpriteBundle {
             sprite: Sprite {
-                color: Color::rgba(1.0, 0.0, 0.0, 1.0),
-                custom_size: Some(Vec2::new(700.0, 20.0)),
+                color: Color::rgba(0.8, 0.2, 0.2, 0.0),
+                custom_size: Some(Vec2::new(700.0, 8.0)),
                 ..default()
             },
-            transform: Transform::from_xyz(0.0, 180., -0.025),
+            transform: Transform::from_xyz(0.0, 165., 0.025),
             ..default()
         }
     );
@@ -133,6 +138,26 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
         },
         PreviewFruit
     ));
+
+    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+    // Score
+    commands.spawn((
+        TextBundle::from_sections([ TextSection::from_style(TextStyle { font: font.clone(), font_size: 120.0, color: Color::WHITE }) ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(25.0),
+            left: Val::Px(50.0),
+            ..default()
+        }),
+        ScoreText
+    ));
+}
+fn score_text_update(game_state : Res<GameState>, mut query: Query<&mut Text, With<ScoreText>>) {
+    for mut text in &mut query {
+        let score = game_state.score;
+        text.sections[0].value = format!("{score}");
+        
+    }
 }
 
 pub fn reset_game(
@@ -153,13 +178,16 @@ pub fn reset_game(
     }
 }
 
-pub fn game_over(mut commands: Commands, fruits: Query<(&Transform, &Fruit)>, time: Res<Time>, mut game_state: ResMut<GameState>) {
-    for (transform, fruit) in &fruits {
+pub fn game_over(mut commands: Commands, mut fruits: Query<(&Transform, &mut Fruit)>, time: Res<Time>, mut game_state: ResMut<GameState>) {
+    for (transform, mut fruit) in &mut fruits {
        if transform.translation.y > 180. {
-            if time.elapsed_seconds()-fruit.create_time >= 3.0 {
-                commands.insert_resource(ClearColor(Color::hex("#de8383").unwrap()));
-                game_state.score = 0;
-                game_state.game_over = true;
+            if time.elapsed_seconds()-fruit.create_time >= 10.0 {
+                fruit.death_time += time.delta_seconds();
+                if fruit.death_time > 0.0 {
+                    commands.insert_resource(ClearColor(Color::hex("#de8383").unwrap()));
+                    game_state.score = 0;
+                    game_state.game_over = true;
+                }
             }
        }
     }
@@ -197,6 +225,8 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
             RigidBody::Dynamic,
             Collider::ball(fruit.size/2.),
             Restitution::new(0.0),
+            ColliderDensity(7.0),
+            LinearDamping(4.0),
             SpriteBundle {
                 sprite: Sprite {
                     color: Color::rgb(1.0, 1.0, 1.0),
@@ -207,7 +237,7 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                 transform: Transform::from_xyz(preview_fruit_transform.translation.x, preview_fruit_transform.translation.y, 1.0),
                 ..default()
             },
-            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds() }
+            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -5.0 }
         ));
         game_state.score += fruit.value;
 
@@ -224,6 +254,17 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
     }
 }
 
+pub fn stabilize(mut query: Query<(&mut LinearVelocity, &Transform), With<Fruit>>) {
+    for (mut velocity, transform) in &mut query {
+        if velocity.y > 0.0 {
+            velocity.y -= 0.1
+        }
+
+        if transform.translation.y > 178. && velocity.y > 0.0 {
+            velocity.y = -0.01;
+        }
+    }
+}
 pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time: Res<Time>, mut game_state: ResMut<GameState>,
     query: Query<(Entity, &Transform, &Fruit, &CollidingEntities)>) {
     //TODO fix this... this is so janky omg
@@ -243,6 +284,8 @@ pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                                 RigidBody::Dynamic,
                                 Collider::ball(new_fruit.size/2.),
                                 Restitution::new(0.0),
+                                ColliderDensity(7.0),
+                                LinearDamping(4.0),
                                 SpriteBundle {
                                     sprite: Sprite {
                                         color: Color::rgb(1.0, 1.0, 1.0),
@@ -253,7 +296,7 @@ pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                                     transform: Transform::from_xyz(pos.x, pos.y, 1.0),
                                     ..default()
                                 },
-                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds() }
+                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds(), death_time: -5.0 }
                             ));
 
                             game_state.score += new_fruit.value;
