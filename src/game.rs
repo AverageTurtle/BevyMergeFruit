@@ -172,6 +172,7 @@ pub fn reset_game(
                 }
                 commands.insert_resource(ClearColor(Color::hex("#ded083").unwrap()));
                 game_state.game_over = false;
+                game_state.score = 0;
             },
             _ => return,
         }
@@ -185,7 +186,6 @@ pub fn game_over(mut commands: Commands, mut fruits: Query<(&Transform, &mut Fru
                 fruit.death_time += time.delta_seconds();
                 if fruit.death_time > 0.0 {
                     commands.insert_resource(ClearColor(Color::hex("#de8383").unwrap()));
-                    game_state.score = 0;
                     game_state.game_over = true;
                 }
             }
@@ -237,7 +237,7 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                 transform: Transform::from_xyz(preview_fruit_transform.translation.x, preview_fruit_transform.translation.y, 1.0),
                 ..default()
             },
-            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -5.0 }
+            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -3.0 }
         ));
         game_state.score += fruit.value;
 
@@ -296,7 +296,7 @@ pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                                     transform: Transform::from_xyz(pos.x, pos.y, 1.0),
                                     ..default()
                                 },
-                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds(), death_time: -5.0 }
+                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds(), death_time: -3.0 }
                             ));
 
                             game_state.score += new_fruit.value;
