@@ -45,7 +45,7 @@ impl Plugin for GamePlugin {
         .add_systems(Update, spawn_fruit)
         .add_systems(FixedUpdate, merge_fruit)
         .add_systems(FixedUpdate, stabilize)
-        .add_systems(Update, game_over)
+        .add_systems(PostUpdate, game_over)
         .add_systems(Update, reset_game)
         .add_systems(Update, score_text_update)
         .add_systems(Update, grow_fruit)
