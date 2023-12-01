@@ -1,5 +1,5 @@
-use bevy::{prelude::*, window::*};
-use bevy_xpbd_2d::{components::{RigidBody, Collider, CollidingEntities, Restitution, ColliderDensity, LinearDamping, LinearVelocity}, resources::Gravity };
+use bevy::{prelude::*, window::*, audio::Volume };
+use bevy_xpbd_2d::{components::{RigidBody, Collider, CollidingEntities, Restitution, ColliderDensity, LinearDamping, LinearVelocity, AngularDamping}, resources::Gravity };
 
 use crate::fruit::*;
 
@@ -12,8 +12,16 @@ pub struct GameState {
     pub last_drop_time: f32
 }
 
+#[derive(Resource)]
+pub struct MergeSound(Handle<AudioSource>);
+
+#[derive(Resource)]
+pub struct SpawnSound(Handle<AudioSource>);
+
 #[derive(Component)]
 pub struct ResetButton;
+
+
 
 impl Default for GameState {
     fn default() -> Self {
@@ -31,7 +39,7 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app
-        .insert_resource(Gravity(Vec2::NEG_Y * 3000.0))
+        .insert_resource(Gravity(Vec2::NEG_Y * 4000.0))
         .init_resource::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, spawn_fruit)
@@ -40,6 +48,8 @@ impl Plugin for GamePlugin {
         .add_systems(Update, game_over)
         .add_systems(Update, reset_game)
         .add_systems(Update, score_text_update)
+        .add_systems(Update, grow_fruit)
+        .add_systems(Update, preview_next_fruit)
         ;
     }
 }
@@ -48,6 +58,14 @@ impl Plugin for GamePlugin {
 struct ScoreText;
 
 pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state: Res<GameState>) {
+    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+
+    let merge_sound = asset_server.load("sfx/merge.ogg");
+    commands.insert_resource(MergeSound(merge_sound));
+
+    let spawn_sound = asset_server.load("sfx/spawn.ogg");
+    commands.insert_resource(SpawnSound(spawn_sound));
+
     commands.spawn(Camera2dBundle {
         ..default()
     });
@@ -63,11 +81,14 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
             image: UiImage::new(asset_server.load("textures/reset_button.png")),
             ..default()
         }, ResetButton));
+
+
     commands.spawn(SpriteBundle {
         texture: asset_server.load("textures/game_board.png"),
         transform: Transform::from_xyz(0.0, -130.0, 0.0),
         ..default()
     });
+
 
     //TODO WHY DOES IT BREAK WHEN I REMOVE THE SPRITE BUNDLE?? EVEN IF I KEEP THE TRANSFORM AHHHH I WANT TO DIE
     commands.spawn((
@@ -123,6 +144,8 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
         }
     );
 
+    
+
     // Preview Fruit
     let prev_fruit = FruitType::from(game_state.current_fruit);
     commands.spawn((
@@ -139,14 +162,61 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>, game_state:
         PreviewFruit
     ));
 
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-    // Score
+    // Next Fruit
     commands.spawn((
-        TextBundle::from_sections([ TextSection::from_style(TextStyle { font: font.clone(), font_size: 120.0, color: Color::WHITE }) ])
+        TextBundle::from_sections([ TextSection::new("Next", TextStyle { font: font.clone(), font_size: 35.0, color: Color::WHITE }) ])
         .with_style(Style {
             position_type: PositionType::Absolute,
-            top: Val::Px(25.0),
-            left: Val::Px(50.0),
+            top: Val::Px(0.0),
+            left: Val::Px(404.0),
+            ..default()
+        }),
+    ));
+
+    commands.spawn(SpriteBundle {
+        texture: asset_server.load("textures/ui_next_fruit.png"),
+        transform: Transform::from_xyz(-350.0+460.0, 450.0-90.0, 0.0),
+        ..default()
+    });
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(70.0, 70.0)),
+                ..default()
+            },
+
+            texture: asset_server.load(FruitType::from(FruitTypes::Blueberry).texture),
+            transform: Transform::from_xyz(-350.0+460.0, 450.0-90.0, 0.0),
+            ..default()
+        },
+        NextFruitPreview { fruit_type: FruitTypes::Blueberry }
+    ));
+
+    // Score
+    // Score label
+    commands.spawn((
+        TextBundle::from_sections([ TextSection::new("Score", TextStyle { font: font.clone(), font_size: 35.0, color: Color::WHITE }) ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(0.0),
+            left: Val::Px(10.0),
+            ..default()
+        }),
+    ));
+
+    commands.spawn(SpriteBundle {
+        texture: asset_server.load("textures/ui_score.png"),
+        transform: Transform::from_xyz(-350.0+186.0, 450.0-90.0, 0.0),
+        ..default()
+    });
+
+    // Score display
+    commands.spawn((
+        TextBundle::from_sections([ TextSection::from_style(TextStyle { font: font.clone(), font_size: 102.0, color: Color::BLACK }) ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(36.0),
+            left: Val::Px(32.0),
             ..default()
         }),
         ScoreText
@@ -158,6 +228,16 @@ fn score_text_update(game_state : Res<GameState>, mut query: Query<&mut Text, Wi
         text.sections[0].value = format!("{score}");
         
     }
+}
+
+pub fn preview_next_fruit(game_state : Res<GameState>, asset_server: Res<AssetServer>, mut query: Query<(&mut NextFruitPreview, &mut Handle<Image>)>) {
+    for (mut next, mut texture) in &mut query {
+        if game_state.next_fruit != next.fruit_type {
+            next.fruit_type = game_state.next_fruit;
+            *texture = asset_server.load(FruitType::from(game_state.next_fruit).texture);
+        }
+    }
+    
 }
 
 pub fn reset_game(
@@ -181,8 +261,8 @@ pub fn reset_game(
 
 pub fn game_over(mut commands: Commands, mut fruits: Query<(&Transform, &mut Fruit)>, time: Res<Time>, mut game_state: ResMut<GameState>) {
     for (transform, mut fruit) in &mut fruits {
-       if transform.translation.y > 180. {
-            if time.elapsed_seconds()-fruit.create_time >= 10.0 {
+       if transform.translation.y > 180. - ((fruit.size / 2.0)-5.0){
+            if time.elapsed_seconds()-fruit.create_time >= 0.5 {
                 fruit.death_time += time.delta_seconds();
                 if fruit.death_time > 0.0 {
                     commands.insert_resource(ClearColor(Color::hex("#de8383").unwrap()));
@@ -193,7 +273,18 @@ pub fn game_over(mut commands: Commands, mut fruits: Query<(&Transform, &mut Fru
     }
 }
 
-pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time: Res<Time>,
+pub fn grow_fruit(time: Res<Time>, mut fruits: Query<(&mut Transform, &mut Fruit)>) {
+    for (mut transform, mut fruit) in &mut fruits {
+        fruit.size += 300.0 * time.delta_seconds();
+        if fruit.size > fruit.target_size {
+            fruit.size = fruit.target_size;
+        }
+        transform.scale = Vec3::new(fruit.size, fruit.size, 1.0);
+
+    }
+}
+
+pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time: Res<Time>, sound: Res<SpawnSound>,
     mouse: Res<Input<MouseButton>>, mut game_state: ResMut<GameState>,
     windows: Query<&Window, With<PrimaryWindow>>, camera: Query<(&Camera, &GlobalTransform)>,
     mut preview_fruit: Query<(&mut Transform, &mut Handle<Image>), With<PreviewFruit>>,
@@ -212,7 +303,7 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
         {
             let x: f32 = cursor_world_pos.x;
             let offset: f32 = FruitType::from(game_state.current_fruit).size/2.;
-            preview_fruit_transform.translation = Vec3::new(x.clamp(-300.0+offset, 300.0-offset), 220.0, 0.5);
+            preview_fruit_transform.translation = Vec3::new(x.clamp(-300.0+offset, 300.0-offset), 235.0, 0.5);
 
             if cursor_world_pos.y > 300.0 {
                 cursor_above_limit = true
@@ -223,26 +314,24 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
         let fruit = FruitType::from(game_state.current_fruit);
         commands.spawn((
             RigidBody::Dynamic,
-            Collider::ball(fruit.size/2.),
+            Collider::ball(0.5),
             Restitution::new(0.0),
             ColliderDensity(7.0),
-            LinearDamping(4.0),
+            LinearDamping(2.0),
+            AngularDamping(0.1),
             SpriteBundle {
                 sprite: Sprite {
                     color: Color::rgb(1.0, 1.0, 1.0),
-                    custom_size: Some(Vec2::new(fruit.size, fruit.size)),
+                    custom_size: Some(Vec2::new(1.0, 1.0)),
                     ..default()
                 },
                 texture: asset_server.load(fruit.texture),
-                transform: Transform::from_xyz(preview_fruit_transform.translation.x, preview_fruit_transform.translation.y, 1.0),
+                transform: Transform::from_xyz(preview_fruit_transform.translation.x, preview_fruit_transform.translation.y, 1.0).with_scale(Vec3::new(16.0, 16.0, 1.0)),
                 ..default()
             },
-            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -3.0 }
+            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -2.0, size: 16.0, target_size: fruit.size }
         ));
         game_state.score += fruit.value;
-
-        let score = game_state.score;
-        println!("{score}");
 
         game_state.current_fruit = game_state.next_fruit;
         game_state.next_fruit = get_random_fruit_type();
@@ -251,6 +340,11 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
         let prev_fruit = FruitType::from(game_state.current_fruit);
         preview_fruit_transform.scale = Vec3::new(prev_fruit.size, prev_fruit.size, 1.0);
         *preview_fruit_texture = asset_server.load(prev_fruit.texture);
+
+        commands.spawn(AudioBundle {
+            source: sound.0.clone(),
+            settings: PlaybackSettings::DESPAWN.with_volume(Volume::new_relative(0.25)).with_speed(0.9)
+        });
     }
 }
 
@@ -265,8 +359,8 @@ pub fn stabilize(mut query: Query<(&mut LinearVelocity, &Transform), With<Fruit>
         }
     }
 }
-pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time: Res<Time>, mut game_state: ResMut<GameState>,
-    query: Query<(Entity, &Transform, &Fruit, &CollidingEntities)>) {
+pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time: Res<Time>, mut game_state: ResMut<GameState>, sound: Res<MergeSound>,
+query: Query<(Entity, &Transform, &Fruit, &CollidingEntities)>) {
     //TODO fix this... this is so janky omg
     //the amount of indents makes me want to cry
     for (entity, transform, fruit, colliding_entities) in &query {
@@ -278,30 +372,39 @@ pub fn merge_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                         let old_fruit = FruitType::from(fruit.fruit_type);
 
                         if let Some(new_fruit_type) = old_fruit.next_fruit {
-                            let pos = (transform.translation+transform2.translation)/2.;
+                            let pos;
+                            if transform.translation.y < transform2.translation.y {
+                                pos = transform.translation
+                            } else {
+                                pos = transform2.translation
+                            }
                             let new_fruit = FruitType::from(new_fruit_type);
+
                             commands.spawn((
                                 RigidBody::Dynamic,
-                                Collider::ball(new_fruit.size/2.),
+                                Collider::ball(0.5),
                                 Restitution::new(0.0),
                                 ColliderDensity(7.0),
-                                LinearDamping(4.0),
+                                LinearDamping(2.0),
+                                AngularDamping(0.01),
                                 SpriteBundle {
                                     sprite: Sprite {
                                         color: Color::rgb(1.0, 1.0, 1.0),
-                                        custom_size: Some(Vec2::new(new_fruit.size, new_fruit.size)),
+                                        custom_size: Some(Vec2::new(1.0, 1.0)),
                                         ..default()
                                     },
                                     texture: asset_server.load(new_fruit.texture),
-                                    transform: Transform::from_xyz(pos.x, pos.y, 1.0),
+                                    transform: Transform::from_xyz(pos.x, pos.y, 1.0).with_scale(Vec3::new(16.0, 16.0, 1.0)),
                                     ..default()
                                 },
-                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds(), death_time: -3.0 }
+                                Fruit { fruit_type: new_fruit_type, create_time: time.elapsed_seconds(), death_time: -1.0, size: 16.0, target_size: new_fruit.size }
                             ));
-
                             game_state.score += new_fruit.value;
-                            let score = game_state.score;
-                            println!("{score}");
+
+                            commands.spawn(AudioBundle {
+                                source: sound.0.clone(),
+                                settings: PlaybackSettings::DESPAWN.with_volume(Volume::new_relative(0.5))
+                            });
                         }
 
                         commands.entity(entity).despawn();

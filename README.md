@@ -1,4 +1,7 @@
 # Bevy Fruit Merge
-A quick game made to help learn bevy! <br>
+A quick game made to help learn bevy! Try and get the watermelon to "win". Or just go for a high score!<br>
 
-**The physics are really broken and janky but I learned what I set out to learn so it will NOT be fixed**
+## Credits
+- Merge and Spawn SFX from elmasmalo1 on freesound.org
+- Banana art created by Yggdrasil
+- Programming and other art by AverageTurtle (Sam)

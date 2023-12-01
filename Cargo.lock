@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_merge_fruit"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bevy",
  "bevy_xpbd_2d",
