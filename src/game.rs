@@ -261,7 +261,7 @@ pub fn reset_game(
 
 pub fn game_over(mut commands: Commands, mut fruits: Query<(&Transform, &mut Fruit)>, time: Res<Time>, mut game_state: ResMut<GameState>) {
     for (transform, mut fruit) in &mut fruits {
-       if transform.translation.y > 180. - ((fruit.size / 2.0)-5.0){
+       if transform.translation.y > 180. - ((fruit.size / 2.0)-16.0){
             if time.elapsed_seconds()-fruit.create_time >= 0.5 {
                 fruit.death_time += time.delta_seconds();
                 if fruit.death_time > 0.0 {
@@ -329,7 +329,7 @@ pub fn spawn_fruit(mut commands: Commands, asset_server: Res<AssetServer>, time:
                 transform: Transform::from_xyz(preview_fruit_transform.translation.x, preview_fruit_transform.translation.y, 1.0).with_scale(Vec3::new(16.0, 16.0, 1.0)),
                 ..default()
             },
-            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -2.0, size: 16.0, target_size: fruit.size }
+            Fruit { fruit_type: game_state.current_fruit, create_time: time.elapsed_seconds(), death_time: -4.0, size: 16.0, target_size: fruit.size }
         ));
         game_state.score += fruit.value;
 
